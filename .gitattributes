@@ -1,0 +1,14 @@
+# The .VDU files are raw VDU byte streams. Byte 10 occurs inside them as a
+# coordinate value; any end-of-line conversion would corrupt them.
+*.VDU binary
+*.png binary
+
+# BASIC sources must keep their CRLF line endings: bbcbasic24.bin tolerates
+# LF, but the 8-bit bbcbasic.bin reports "Bad program" without CRLF.
+*.BAS -text
+
+# Ordinary text
+README.md text eol=lf
+*.py text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
