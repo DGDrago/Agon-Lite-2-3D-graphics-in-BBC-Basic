@@ -1,10 +1,10 @@
 # Agon Light 2 — 3D Graphics in BBC BASIC
 
-**The imperative: a smooth, real-time 3D animation of the Cobra Mk III from *Elite*, using nothing but Agon's BBC BASIC. No assembler routines. No machine code. Not one byte of hand-written eZ80.**
+**The imperative: a smooth, real-time 3D animation of the Cobra Mk III from *Elite*, using nothing but Agon's BBC BASIC. No assembler routines.**
 
-That constraint is the whole point. Anyone can rotate a wireframe on an 18 MHz CPU by dropping into assembler. The question we set out to answer was whether an interpreted BASIC — the one that ships with the machine — can do it at a frame rate you would not be embarrassed to show someone.
+The question we set out to answer was whether an interpreted BASIC — the one that ships with the machine — can do it at a frame rate you would not be embarrassed to show someone. Turned out it can... sort of... Namely, only using precomputed ("baked") coords for vertices, meaning - not exactly interactive experience.
 
-It can. We went from 7.5 fps to a locked 30 fps. This document is the record of how, and — more usefully — of every wall we hit on the way, with numbers.
+In several iterations we went from 7.5 fps to a locked 30 fps. This document is the record of how-to and obstacles and quirks that Agon implementation of BBC Basic puts before its users.
 
 \---
 
@@ -63,10 +63,10 @@ Method: 5000 iterations of a one-statement loop, empty-loop time subtracted. The
 |`A%=B%-C%`|46|77|+30 µs|
 |`A%=Z%(3)` — array read|66|110|**+63 µs**|
 |`Z%(3)=B%` — array write|66|110|**+63 µs**|
-|`A%=B%\*C%`|84|140|**+93 µs**|
+|`A%=B%\\\*C%`|84|140|**+93 µs**|
 |`A%=B% DIV C%`|96|160|**+113 µs**|
 |`A%=B% DIV 256`|116|193|**+147 µs**|
-|`A%=B%\*C%+D%\*E%`|158|263|+217 µs|
+|`A%=B%\\\*C%+D%\\\*E%`|158|263|+217 µs|
 
 **Read this carefully, because the obvious conclusion is wrong.** Yes, multiplication is roughly three times an addition. But an *array access* costs two thirds of a multiply, and in a typical vertex loop you do more array accesses than multiplies. When we halved the multiplications and the frame time barely moved, this table is why.
 
@@ -79,18 +79,18 @@ This one we did not see coming.
 |Expression|per 5000|
 |-|-:|
 |`A%=C%` (variable)|28|
-|`A%=\&FF` (hex constant)|**28**|
+|`A%=\\\&FF` (hex constant)|**28**|
 |`A%=255` (decimal constant)|46|
 |`B%+C%`|48|
 |`B%+160`|66|
-|`B%\*C%` / `B%\*256`|84 / 102|
+|`B%\\\*C%` / `B%\\\*256`|84 / 102|
 |`B% DIV C%` / `B% DIV K%` / `B% DIV 256`|96 / 96 / 114|
 
 A **decimal literal costs the same as an extra variable operand** — about 30 µs each time it is evaluated. BBC BASIC stores numeric literals as text in the tokenised program and re-parses them on *every* execution.
 
 A **hexadecimal literal is free** — indistinguishable from a variable reference.
 
-So `DIV 256` is measurably slower than `DIV C%`, and `DIV \&100` is as fast as either. In an inner loop, write your constants in hex. It costs nothing and it is the cheapest optimisation in this entire document.
+So `DIV 256` is measurably slower than `DIV C%`, and `DIV \\\&100` is as fast as either. In an inner loop, write your constants in hex. It costs nothing and it is the cheapest optimisation in this entire document.
 
 ### Variable name lookup
 
@@ -108,7 +108,7 @@ BBC BASIC keeps variables in a linked list per first letter and walks it. Nine v
 
 ### Trap 1: you only get 60/n
 
-In a double-buffered mode, `VDU 23,0,\&C3` swaps buffers **at the next vertical sync**. At 60 Hz your frame rate can therefore only be 60, 30, 20, 15, 12, 10, 8.6, 7.5 … and nothing in between.
+In a double-buffered mode, `VDU 23,0,\\\&C3` swaps buffers **at the next vertical sync**. At 60 Hz your frame rate can therefore only be 60, 30, 20, 15, 12, 10, 8.6, 7.5 … and nothing in between.
 
 The practical consequence is that optimisation is a **step function**. Shaving 15% off your frame time usually changes nothing at all, and then one more small saving suddenly moves you a whole step. Do not judge a change by whether the counter moved; judge it by the measured cost of what you removed.
 
@@ -118,7 +118,7 @@ Every one of our results — 7.5, 10, 15, 30 — is a divisor of 60. That is the
 
 From `MOS-API.md`:
 
-> `sysvar\_time: EQU 00h ; 4: Clock timer in centiseconds (incremented by 2 every VBLANK)`
+> `sysvar\\\_time: EQU 00h ; 4: Clock timer in centiseconds (incremented by 2 every VBLANK)`
 
 Two units per VBLANK is arithmetic for a **50 Hz** machine: 2 × 50 = 100 units per second. Agon's 60 Hz screen modes tick `TIME` **120 times a second**. Every duration you measure with `TIME` in a 60 Hz mode is therefore 20% too large, and every rate you derive from it is 20% too small.
 
@@ -136,7 +136,7 @@ We only caught this because 24 is not a divisor of 60 and that bothered us. Four
 
 ### 1\. Integer fixed point and a sine table
 
-Floating point is not an option. Everything runs in integers with 8 fractional bits: the sine table holds `INT(256\*SIN(...))` for 64 angles, and products are brought back down with `DIV \&100`.
+Floating point is not an option. Everything runs in integers with 8 fractional bits: the sine table holds `INT(256\\\*SIN(...))` for 64 angles, and products are brought back down with `DIV \\\&100`.
 
 64 entries is a 5.6° step, which is smooth enough that the eye does not see it.
 
@@ -145,8 +145,8 @@ Floating point is not an option. Everything runs in integers with 8 fractional b
 The Cobra is symmetric about its centreline. For a vertex `(x,y,z)` and its mirror `(-x,y,z)`, the rotated coordinates share every term that does not involve `x`:
 
 ```
-rx  =  a + z\*M2        rx' = -a + z\*M2         where a = x\*M0
-ry  =  b + y\*M4 + z\*M5 ry' = -b + y\*M4 + z\*M5        b = x\*M3
+rx  =  a + z\\\*M2        rx' = -a + z\\\*M2         where a = x\\\*M0
+ry  =  b + y\\\*M4 + z\\\*M5 ry' = -b + y\\\*M4 + z\\\*M5        b = x\\\*M3
 ```
 
 Compute the shared part once, then add and subtract. Two vertices for the price of one and a bit. Across 24 of the 28 vertices this removed 45% of the multiplications.
@@ -160,7 +160,7 @@ Dropping the perspective divide was supposed to save two divisions per vertex. I
 And the projection scale folds into the division that had to happen anyway to undo the 8 fractional bits:
 
 ```basic
-SX%(J%)=\&A0+(E%+A%) DIV DV%
+SX%(J%)=\\\&A0+(E%+A%) DIV DV%
 ```
 
 One division, no multiplication, scale included. Combined with symmetry this took multiplications per frame from 224 to **72**, and divisions from 140 to **56**.
@@ -174,7 +174,7 @@ At a viewing distance where the ship spans a third of the screen, nobody can tel
 The naive implementation rotates all 13 face normals with the full matrix — 104 multiplications, more than the vertices cost. But the test only needs the **z component** of the rotated normal, which is the dot product with the third row of the matrix:
 
 ```basic
-IF NX%(I%)\*M6%+NY%(I%)\*M7%+NZ%(I%)\*M8%<0 THEN ... visible
+IF NX%(I%)\\\*M6%+NY%(I%)\\\*M7%+NZ%(I%)\\\*M8%<0 THEN ... visible
 ```
 
 Three multiplications per face, 39 in total, and no division because only the sign matters.
@@ -191,7 +191,7 @@ Instead, build a 13-bit mask of visible faces once per frame, and give each edge
 REM once per frame
 VB%=0
 FOR I%=0 TO NF%-1
-  IF NX%(I%)\*M6%+NY%(I%)\*M7%+NZ%(I%)\*M8%<0 THEN VB%=VB% OR PW%(I%)
+  IF NX%(I%)\\\*M6%+NY%(I%)\\\*M7%+NZ%(I%)\\\*M8%<0 THEN VB%=VB% OR PW%(I%)
 NEXT
 
 REM per edge
@@ -202,20 +202,20 @@ IF (VB% AND EM%(I%)) THEN MOVE ... : DRAW ...
 
 ### 6\. Hex constants everywhere
 
-See [the literal trap](#the-literal-trap). `160` became `\&A0`, `120` became `\&78`, `256` became `\&100`, `63` became `\&3F`. Mechanical, zero risk, free.
+See [the literal trap](#the-literal-trap). `160` became `\\\&A0`, `120` became `\\\&78`, `256` became `\\\&100`, `63` became `\\\&3F`. Mechanical, zero risk, free.
 
 ### 7\. Unrolling the vertex loop
 
 With the geometry baked into the code as hex constants, the whole loop apparatus disappears — no loop counter, and above all no array reads to fetch each vertex:
 
 ```basic
- 1000 A%=\&20\*M0% : B%=\&20\*M3%
- 1010 E%=\&4C\*M2% : F%=\&4C\*M5%
- 1020 SX%(\&0)=\&A0+(E%+A%) DIV DV% : SY%(\&0)=\&78-(F%+B%) DIV DV%
- 1030 SX%(\&1)=\&A0+(E%-A%) DIV DV% : SY%(\&1)=\&78-(F%-B%) DIV DV%
+ 1000 A%=\\\&20\\\*M0% : B%=\\\&20\\\*M3%
+ 1010 E%=\\\&4C\\\*M2% : F%=\\\&4C\\\*M5%
+ 1020 SX%(\\\&0)=\\\&A0+(E%+A%) DIV DV% : SY%(\\\&0)=\\\&78-(F%+B%) DIV DV%
+ 1030 SX%(\\\&1)=\\\&A0+(E%-A%) DIV DV% : SY%(\\\&1)=\\\&78-(F%-B%) DIV DV%
 ```
 
-Five array reads and one loop iteration removed per vertex pair. It also removes work we had not thought about: where a coordinate is zero, the term is simply not emitted. Vertex 20 is `(0,0,76)`, so `F%=0\*M4%+\&4C\*M5%` becomes `F%=\&4C\*M5%`.
+Five array reads and one loop iteration removed per vertex pair. It also removes work we had not thought about: where a coordinate is zero, the term is simply not emitted. Vertex 20 is `(0,0,76)`, so `F%=0\\\*M4%+\\\&4C\\\*M5%` becomes `F%=\\\&4C\\\*M5%`.
 
 The code is ugly and long. **Generate it with a script** — ours is produced by a Python generator that also verifies, by parsing the emitted BASIC back, that all 28 vertices match the reference table. Never hand-type 56 lines of constants.
 
@@ -226,15 +226,15 @@ This took us from 12 to 15 fps and is where the real-time approach runs out of r
 The Buffered Commands API lets you store a sequence of VDU commands on the VDP and execute it later:
 
 ```basic
-VDU 23,0,\&A0,id;0,length;    : REM followed by <length> bytes, captured into the buffer
-VDU 23,0,\&A0,id;1            : REM execute everything in that buffer
+VDU 23,0,\\\&A0,id;0,length;    : REM followed by <length> bytes, captured into the buffer
+VDU 23,0,\\\&A0,id;1            : REM execute everything in that buffer
 ```
 
 So: at startup, compute all 64 rotational positions, and for each one write a buffer containing the screen clear and a `MOVE`/`DRAW` pair for every visible edge. From then on, an entire frame is:
 
 ```basic
-VDU 23,0,\&A0,BI%+A%;1
-VDU 23,0,\&C3
+VDU 23,0,\\\&A0,BI%+A%;1
+VDU 23,0,\\\&C3
 ```
 
 **Six bytes to draw the ship, six to swap buffers.** Neither the geometry nor the drawing touches the eZ80 any more. The limit becomes VSYNC.
@@ -253,7 +253,7 @@ For a two-axis tumble the box grows to roughly 219×219 and the saving drops to 
 
 ### 10\. Double buffering
 
-`MODE 136` is 320×240 in 64 colours, double-buffered. `VDU 23,0,\&C3` swaps. Without it, erasing and redrawing in the visible buffer tears and flickers badly at these frame rates.
+`MODE 136` is 320×240 in 64 colours, double-buffered. `VDU 23,0,\\\&C3` swaps. Without it, erasing and redrawing in the visible buffer tears and flickers badly at these frame rates.
 
 Note that in a *non*-buffered mode the same command means "wait for VSYNC", which is useful in its own right.
 
@@ -270,7 +270,7 @@ Add up the measured costs of the irreducible work in a real-time frame — 72 mu
 BASIC's own memory is not a constraint. Measured on `bbcbasic24.bin`:
 
 ```
-PAGE  = \&44E00      HIMEM = \&B0000
+PAGE  = \\\&44E00      HIMEM = \\\&B0000
 HIMEM-LOMEM = 438,465 bytes free
 ```
 
@@ -280,7 +280,7 @@ The often-quoted "64K segment, about 48K for programs" applies to the **8-bit `b
 
 The VDP is an ESP32-Pico-D4 with **8 MB** of attached RAM. Screen memory for a double-buffered 320×240 mode is about 154 KB of that. Memory on the VDP is, for our purposes, unlimited.
 
-There is **no command to query free VDP memory**. The commands that return data to the eZ80 are `\&80`–`\&89`: general poll, keyboard locale, cursor position, character at position, pixel colour, audio status, screen dimensions, RTC, keyboard control, mouse. Nothing about memory. If you exhaust it, you find out because things silently stop working.
+There is **no command to query free VDP memory**. The commands that return data to the eZ80 are `\\\&80`–`\\\&89`: general poll, keyboard locale, cursor position, character at position, pixel colour, audio status, screen dimensions, RTC, keyboard control, mouse. Nothing about memory. If you exhaust it, you find out because things silently stop working.
 
 The Buffered Commands API is generous: **65534 buffers**, a single block up to **65535 bytes**, and buffers may exceed 64 KB by holding several blocks (which is why the API has a 24-bit "advanced offset" mode).
 
@@ -294,9 +294,9 @@ This is the question everyone asks, and the answer is no. Three reasons, in incr
 
 > `0 NOT · 1 Negate · 2 Set · 3 Add · 4 Add with carry · 5 AND · 6 OR · 7 XOR`
 
-   No multiply, no divide, no shift. Rotation is multiplication. Building one out of repeated addition means up to 256 operations per multiply and 72 multiplies per frame — around 18,000 VDU operations per frame, orders of magnitude slower than letting the eZ80 do it.
+No multiply, no divide, no shift. Rotation is multiplication. Building one out of repeated addition means up to 256 operations per multiply and 72 multiplies per frame — around 18,000 VDU operations per frame, orders of magnitude slower than letting the eZ80 do it.
 
-   Searching the whole documentation set for `affine`, `transform`, `matrix` and `rotate` returns nothing. This VDP does not even have a 2D affine transform for bitmaps.
+Searching the whole documentation set for `affine`, `transform`, `matrix` and `rotate` returns nothing. This VDP does not even have a 2D affine transform for bitmaps.
 
 **One thing you *can* offload that we did not need:** command 5 with the "multiple targets" bit can add a constant to a run of bytes inside a stored command sequence. That means the coordinates of a baked frame can be **translated** without re-baking. Rotation no, movement across the screen yes, almost free. If your ship needs to fly rather than spin in place, that is the mechanism.
 
@@ -344,8 +344,8 @@ The player side is nine lines:
 ```basic
 FOR N%=0 TO NPOS%-1
   INPUT#G%,A$ : L%=VAL(A$)
-  VDU 23,0,\&A0,BI%+N%;2
-  VDU 23,0,\&A0,BI%+N%;0,L%;
+  VDU 23,0,\\\&A0,BI%+N%;2
+  VDU 23,0,\\\&A0,BI%+N%;0,L%;
   FOR C%=1 TO (L%+199) DIV 200
     INPUT#G%,A$ : PRINT A$;
   NEXT
@@ -371,11 +371,11 @@ Each player is the same program with different grid constants. Pick one by how s
 
 |Program|Data file|Positions|Rotation|
 |-|-|-:|-|
-|`COBRA\_64x1.BAS`|`COBRA\_64x1.VDU`|64|one axis, 5.6° steps, fixed tilt|
-|`COBRA\_32x16.BAS`|`COBRA\_32x16.VDU`|512|two axes, 11.25° / 22.5°|
-|`COBRA\_32x32.BAS`|`COBRA\_32x32.VDU`|1024|two axes, 11.25°|
-|`COBRA\_64x32.BAS`|`COBRA\_64x32.VDU`|2048|two axes, 5.6° / 11.25°|
-|`COBRA\_64x64.BAS`|`COBRA\_64x64.VDU`|4096|two axes, 5.6°|
+|`COBRA\\\_64x1.BAS`|`COBRA\\\_64x1.VDU`|64|one axis, 5.6° steps, fixed tilt|
+|`COBRA\\\_32x16.BAS`|`COBRA\\\_32x16.VDU`|512|two axes, 11.25° / 22.5°|
+|`COBRA\\\_32x32.BAS`|`COBRA\\\_32x32.VDU`|1024|two axes, 11.25°|
+|`COBRA\\\_64x32.BAS`|`COBRA\\\_64x32.VDU`|2048|two axes, 5.6° / 11.25°|
+|`COBRA\\\_64x64.BAS`|`COBRA\\\_64x64.VDU`|4096|two axes, 5.6°|
 
 ### Tools and benchmarks
 
@@ -399,9 +399,9 @@ Every version in this repo was verified by **re-implementing the exact integer a
 ```
 cd /games/Elite3D
 load /bin/bbcbasic24.bin
-run . cobra.bas          : REM real-time, free rotation, \~15 fps
-run . cobra\_64x1.bas     : REM pre-baked, 30 fps, loads in under a second
-run . cobra\_64x64.bas    : REM pre-baked, 30 fps, smoothest tumble, \~12 s load
+run . cobra.bas          : REM real-time, free rotation, \\\~15 fps
+run . cobra\\\_64x1.bas     : REM pre-baked, 30 fps, loads in under a second
+run . cobra\\\_64x64.bas    : REM pre-baked, 30 fps, smoothest tumble, \\\~12 s load
 ```
 
 `bbcbasic.bin` works too, provided the `.BAS` files keep their CRLF line endings.
